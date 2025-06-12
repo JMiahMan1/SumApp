@@ -15,8 +15,8 @@
  * - A startup script to install a web server and test database connectivity.
  *
  * @author Jeremiah Summers
- * @version 0.0.1
- * @last-updated 2025-06-00
+ * @version 0.0.2
+ * @last-updated 2025-06-11
  */
 
 import { Construct } from "constructs";
@@ -32,7 +32,8 @@ import { ProjectService } from "@cdktf/provider-google/lib/project-service";
 import { ServiceNetworkingConnection } from "@cdktf/provider-google/lib/service-networking-connection";
 import { RandomProvider } from "@cdktf/provider-random/lib/provider";
 import { Password } from "@cdktf/provider-random/lib/password";
-
+import { TimeProvider } from "@cdktf/provider-time/lib/provider";
+import { Sleep } from "@cdktf/provider-time/lib/sleep";
 
 class WebAppStack extends TerraformStack {
   constructor(scope: Construct, id: string) {
@@ -64,6 +65,15 @@ class WebAppStack extends TerraformStack {
      * password for our database instance, enhancing security.
      */
     new RandomProvider(this, "random", {});
+
+    /**
+     * Configures the Time provider.
+     * This provider allows for the creation of time-based resources, which we
+     * use to introduce a delay during the destroy process to prevent
+     * race conditions with GCP's backend APIs. This line is required to resolve
+     * a validation error.
+     */
+    new TimeProvider(this, "time", {});
 
     // #########################################################################
     // # Section 2: Networking
@@ -226,6 +236,15 @@ class WebAppStack extends TerraformStack {
       dependsOn: [serviceNetworkingApi],
     });
 
+    const destroyDelay = new Sleep(this, "destroy-delay", {
+      // The destroy order is the reverse of the creation order. By depending on the
+      // network connection, we ensure this delay is created *after* the connection
+      // and therefore destroyed *before* it.
+      dependsOn: [privateVpcConnection],
+      // Pause for 5 minutes when this resource is destroyed.
+      destroyDuration: "5m",
+    });
+
     /**
      * Creates the managed Google Cloud SQL for PostgreSQL instance.
      */
@@ -233,6 +252,9 @@ class WebAppStack extends TerraformStack {
       name: "webapp-db",
       databaseVersion: "POSTGRES_13",
       region: "us-west1",
+      // Note: Explicitly disable deletion protection for non-production environments.
+      // This helps ensure that 'destroy' commands can succeed.
+      deletionProtection: false,
       settings: {
         tier: "db-f1-micro", // A cost-effective tier for development/testing.
         ipConfiguration: {
@@ -245,14 +267,14 @@ class WebAppStack extends TerraformStack {
       // The `result` attribute of the RandomPassword resource holds the generated password.
       rootPassword: dbPassword.result,
       // Explicitly depend on the VPC peering connection to ensure the network is ready.
-      dependsOn: [privateVpcConnection, sqlAdminApi],
+      dependsOn: [privateVpcConnection, sqlAdminApi, destroyDelay],
     });
 
     // #########################################################################
     // # Section 5: Compute (GCE Web Server)
     // #
     // # This section defines the virtual machine that will run our web
-    // # application code.
+    // # application code, not completely finished yet..
     // #########################################################################
 
     /**
@@ -260,13 +282,14 @@ class WebAppStack extends TerraformStack {
      */
     const webappInstance = new ComputeInstance(this, "webapp-instance", {
       name: "webapp-instance",
-      machineType: "f1-micro",
-      zone: "us-west1",
+      machineType: "g1-small",
+      zone: "us-west1-b",
       tags: ["web"], // Tags can be used to apply firewall rules or for identification.
 
       bootDisk: {
         initializeParams: {
-          image: "rocky-linux-9/rocky-linux-9-v20250513",
+          //gcloud compute images list | grep rocky
+          image: "rocky-linux-cloud/rocky-linux-8",
         },
       },
 
@@ -280,12 +303,15 @@ class WebAppStack extends TerraformStack {
       }],
 
       /**
-       * The startup script is a powerful feature that runs automatically the
-       * first time the instance boots. We use it to bootstrap our application
-       * environment and perform an initial health check.
+       * The startup script runs automatically the first time the instance boots. 
+       * We use it to bootstrap our application environment and perform an initial 
+       * health check.
        */
       metadataStartupScript: `
         #!/bin/bash
+        # Switch to Headless, non Graphical Mode.
+        sudo systemctl set-default multi-user.target
+        sudo systemctl isolate multi-user.target 
         # Wait for the network to be fully available.
         sleep 10
 
