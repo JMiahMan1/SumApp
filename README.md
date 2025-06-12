@@ -1,6 +1,6 @@
 # SumApp – GCP Infrastructure with Terraform CDK (TypeScript)
 
-This project sets up foundational cloud infrastructure for a simple web application using Terraform CDK with TypeScript. The goal was to demonstrate secure provisioning of compute and database resources in Google Cloud Platform (GCP) while limiting scope to 2 hours, per the Couchsurfing Cloud Engineer coding exercise.
+This project sets up foundational cloud infrastructure for a simple web application using Terraform CDK with TypeScript. The goal was to provision compute and database resources in Google Cloud Platform (GCP) while limiting scope to 2 hours, per the Couchsurfing Cloud Engineer coding exercise.
 
 ---
 
@@ -14,7 +14,7 @@ This project sets up foundational cloud infrastructure for a simple web applicat
 
 ---
 
-## High-Level Architecture Diagram
+## High-Level Architecture Diagram (not all resources are created)
 
 ```
 
@@ -60,7 +60,7 @@ This project sets up foundational cloud infrastructure for a simple web applicat
 ### 1. Install dependencies
 
 ```bash
-npm install
+sudo npm install -g cdktf-cli
 ````
 
 ---
